@@ -1,0 +1,76 @@
+var roi= table.filter(ee.Filter.eq("DISTRICT", "SIALKOT"))
+var data = image
+          .select('NO2_column_number_density')
+          .filterDate('2023-01-01','2023-12-31')
+          // .mean()
+          // .clip(roi);
+        
+Map.addLayer(roi,{},"ROI")
+Map.centerObject(roi)
+var img_avg=data.reduce(ee.Reducer.mean()).clip(roi)
+print(img_avg)
+var band_viz = {
+  min:0.00008,
+  max:0.00010,
+  palette: ['black', 'blue', 'purple', 'cyan', 'green', 'yellow', 'red']
+};
+// print(img_avg)
+// Map.addLayer(img_avg, band_viz, 'S5P N02')
+// calculate the min/max value
+var img_min= img_avg.reduceRegion({
+          reducer: ee.Reducer.min(),
+          geometry: roi,
+          scale:1113.2})
+print(img_min,'min')
+Map.addLayer(img_avg,{},"band")
+// For calculation of Concentration of NO2
+var start_time = '2023-01-01'
+var end_time = '2023-12-31'
+
+var NO2 = ee.ImageCollection('COPERNICUS/S5P/NRTI/L3_NO2')
+  .select('NO2_column_number_density')
+.filterBounds(roi)
+.filterDate(start_time,end_time)
+.select('NO2_column_number_density')
+
+.map(function(a){
+  return a.set('days', ee.Image(a).date().get('days'))
+})
+// print(NO2)
+// calculation of Air column denisty in ug/m^2
+var days = ee.List(NO2.aggregate_array('days')).distinct()
+print(days)
+
+var NO2_weekly_conc = days.map(function(x){
+  return NO2.filterMetadata('days', 'equals', x).mean().set('days', x)
+})
+var NO2_final = ee.ImageCollection.fromImages(NO2_weekly_conc)
+// print(NO2_final)
+
+// Ceration of Time series chart
+
+var chart = ui.Chart.image.series(NO2_final, roi,ee.Reducer.mean(),1113.2,'days')
+.setOptions({
+title: 'NO2 Concentration',
+vAxis: {title: 'Concentration(mol/m²)'},
+hAxis: {title: 'days'}
+})
+print(chart)
+ 
+// var table = ee.ImageCollection(NO2_final).flatten();
+// Export.table.toDrive({
+//   collection: table,
+//   description: 'exported_data',
+//   fileFormat: 'CSV',
+//   folder: 'Google Earth',
+// });
+// // DOWNLOAD DATA FOR REGRESSION ANALYSIS
+// Export.image.toDrive({
+//   image : NO2_final.mosaic().clip(roi),
+//   description: 'NO_2_2023',
+//   folder:"Google Earth",
+//   scale:1113.2,
+//   region: roi,
+//   crs:'EPSG:4326',
+//   fileFormat:'GeoTIFF',
+// });
